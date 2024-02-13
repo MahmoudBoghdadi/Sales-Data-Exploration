@@ -1,0 +1,266 @@
+How many customers do not have DOB information available?
+
+SELECT COUNT(*) AS num_customers_without_dob
+FROM sales.customer
+WHERE TRIM(dob) = '' OR dob IS NULL;
+------------------------------
+How many customers are there in each pincode and gender combination
+
+SELECT primary_pincode, gender, COUNT(*) AS num_customers
+FROM sales.customer
+GROUP BY primary_pincode, gender;
+-----------------------------------------
+Print product name and mrp for products which have more than 50000 MRP
+
+SELECT product_name, mrp
+FROM sales.product
+where mrp > 5000;
+---------------------------------------
+How many delivery personal are there in each pincode
+
+SELECT delivery_person_id, pincode, count(*) as num_delivery_person
+FROM sales.`delivery-person` group by delivery_person_id, pincode;
+----------------------------------
+For each Pin code, print the count of orders, sum of total amount paid, average amount 
+paid, maximum amount paid, minimum amount paid for the transactions which were 
+paid by 'cash'. Take only 'buy' order types
+
+SELECT 
+    delivery_pincode,
+    COUNT(order_id) AS order_count,
+    SUM(total_amount_paid) AS total_amount_paid,
+    AVG(total_amount_paid) AS avg_amount_paid,
+    MAX(total_amount_paid) AS max_amount_paid,
+    MIN(total_amount_paid) AS min_amount_paid
+FROM sales.orders
+WHERE order_type = 'buy' AND payment_type = 'cash'
+GROUP BY delivery_pincode;
+--------------------------------------------------
+For each delivery_person_id, print the count of orders and total amount paid for 
+product_id = 12350 or 12348 and total units > 8. Sort the output by total amount paid in 
+descending order. Take only 'buy' order types
+
+SELECT 
+    delivery_person_id,
+    COUNT(order_id) AS order_count,
+    SUM(total_amount_paid) AS total_amount_paid
+FROM sales.orders
+WHERE order_type = 'buy'
+    AND (product_id = 12350 OR product_id = 12348)
+    AND tot_units > 8
+GROUP BY delivery_person_id
+ORDER BY total_amount_paid DESC;
+------------------------------------------------------------
+Print the Full names (first name plus last name) for customers that have email on 
+"gmail.com"
+
+SELECT concat(first_name,' ', last_name) As Full_names 
+from sales.customer
+where email like '%@gmail.com%';
+-------------------------------------------------------------
+Which pincode has average amount paid more than 150,000? Take only 'buy' order 
+types
+
+SELECT delivery_pincode, AVG(total_amount_paid) AS avg_amount_paid
+FROM sales.orders
+WHERE order_type = 'buy'
+GROUP BY delivery_pincode
+HAVING avg_amount_paid > 150000;
+-------------------------------------------------------------
+Create following columns from order_dim data -
+ order_date
+ Order day
+ Order month
+ Order year 
+
+SELECT 
+order_date,
+DAY(STR_TO_DATE(order_date, '%d-%m-%Y')) AS order_day,
+MONTH(STR_TO_DATE(order_date, '%d-%m-%Y')) AS order_month,
+YEAR(STR_TO_DATE(order_date, '%d-%m-%Y')) AS order_year
+FROM sales.orders;
+-----------------------------------------------------------------
+How many total orders were there in each month and how many of them were 
+returned? Add a column for return rate too.
+return rate = (100.0 * total return orders) / total buy orders
+Hint: You will need to combine SUM() with CASE WHEN
+
+SELECT 
+    MONTH(STR_TO_DATE(order_date, '%d-%m-%Y')) AS order_month,
+    COUNT(*) AS total_orders,
+    SUM(CASE WHEN order_type = 'return' THEN 1 ELSE 0 END) AS returned_orders,
+    (100.0 * SUM(CASE WHEN order_type = 'return' THEN 1 ELSE 0 END)) / COUNT(*) AS return_rate
+FROM sales.orders
+GROUP BY order_month;
+-------------------------------------------------------
+
+*** at first I run a query on sales schema to rename the empty column name on the product table to product_id
+(USE sales;
+ALTER TABLE product
+CHANGE COLUMN MyUnknownColumn product_id INT;) 
+
+How many units have been sold by each brand? Also get total returned units for each 
+brand.
+
+ SELECT
+    p.brand,
+    SUM(o.tot_units) AS total_units_sold,
+    SUM(CASE WHEN o.order_type = 'return' THEN o.tot_units ELSE 0 END) AS total_returned_units
+FROM
+    orders o
+JOIN
+    product p ON o.product_id = p.product_id
+GROUP BY
+    p.brand;
+--------------------------------------------------------
+How many distinct customers and delivery boys are there in each state
+
+ SELECT
+    p.state,
+    COUNT(DISTINCT c.cust_id) AS distinct_customers,
+    COUNT(DISTINCT d.delivery_person_id) AS distinct_delivery_boys
+FROM
+    pincode p
+LEFT JOIN
+    customer c ON p.pincode = c.primary_pincode
+LEFT JOIN
+    orders o ON c.cust_id = o.cust_id
+LEFT JOIN
+    `delivery-person` d ON p.pincode = d.pincode
+GROUP BY
+    p.state;
+--------------------------------------------------------------
+For every customer, print how many total units were ordered, how many units were 
+ordered from their primary_pincode and how many were ordered not from the 
+primary_pincode. Also calulate the percentage of total units which were ordered from 
+primary_pincode(remember to multiply the numerator by 100.0). Sort by the 
+percentage column in descending order
+
+SELECT
+    c.cust_id,
+    SUM(o.tot_units) AS total_units_ordered,
+    SUM(CASE WHEN o.delivery_pincode = c.primary_pincode THEN o.tot_units ELSE 0 END) AS units_ordered_primary_pincode,
+    SUM(CASE WHEN o.delivery_pincode != c.primary_pincode THEN o.tot_units ELSE 0 END) AS units_ordered_other_pincode,
+    (100.0 * SUM(CASE WHEN o.delivery_pincode = c.primary_pincode THEN o.tot_units ELSE 0 END)) / SUM(o.tot_units) AS percentage_primary_pincode
+FROM
+    customer c
+LEFT JOIN
+    orders o ON c.cust_id = o.cust_id
+GROUP BY
+    c.cust_id
+ORDER BY
+    percentage_primary_pincode DESC;
+----------------------------------------------------
+For each product name, print the sum of number of units, total amount paid, total 
+displayed selling price, total mrp of these units, and finally the net discount from selling 
+price.
+(i.e. 100.0 - 100.0 * total amount paid / total displayed selling price) &
+the net discount from mrp (i.e. 100.0 - 100.0 * total amount paid / total mrp)
+
+SELECT
+    p.product_name,
+    SUM(o.tot_units) AS total_units,
+    SUM(o.total_amount_paid) AS total_amount_paid,
+    SUM(o.displayed_selling_price_per_unit * o.tot_units) AS total_displayed_selling_price,
+    SUM(p.mrp * o.tot_units) AS total_mrp,
+    100.0 - 100.0 * SUM(o.total_amount_paid) / SUM(o.displayed_selling_price_per_unit * o.tot_units) AS net_discount_selling_price,
+    100.0 - 100.0 * SUM(o.total_amount_paid) / SUM(p.mrp * o.tot_units) AS net_discount_mrp
+FROM
+    product p
+JOIN
+    orders o ON p.product_id = o.product_id
+GROUP BY
+    p.product_name;
+---------------------------------------------------
+For every order_id (exclude returns), get the product name and calculate the discount 
+percentage from selling price. Sort by highest discount and print only those rows where 
+discount percentage was above 10.10%.
+
+SELECT o.order_id, p.product_name,
+    (100.0 - 100.0 * o.total_amount_paid / (o.displayed_selling_price_per_unit * o.tot_units)) AS discount_percentage
+FROM orders o
+JOIN
+    product p ON o.product_id = p.product_id
+WHERE
+    o.order_type != 'return'
+HAVING discount_percentage > 10.10
+ORDER BY
+    discount_percentage DESC;
+--------------------------------------------------
+Using the per unit procurement cost in product_dim, find which product category has 
+made the most profit in both absolute amount and percentage
+Absolute Profit = Total Amt Sold - Total Procurement Cost
+Percentage Profit = 100.0 * Total Amt Sold / Total Procurement Cost - 100.0 
+
+SELECT 
+    p.category,
+    SUM(o.total_amount_paid) - SUM(p.procurement_cost_per_unit * o.tot_units) AS absolute_profit,
+    (100.0 * SUM(o.total_amount_paid) / SUM(p.procurement_cost_per_unit * o.tot_units)) - 100.0 AS percentage_profit
+FROM 
+product p
+JOIN 
+orders o ON p.product_id = o.product_id
+GROUP BY
+    p.category
+ORDER BY
+    absolute_profit DESC;
+--------------------------------------------------- 
+For every delivery person(use their name), print the total number of order ids (exclude 
+returns) by month in separate columns i.e. there should be one row for each 
+delivery_person_id and 12 columns for every month in the year
+
+USE sales; SELECT
+    dp.name AS delivery_person_name,
+    SUM(CASE WHEN MONTH(STR_TO_DATE(o.order_date, '%m-%d-%Y')) = 1 THEN 1 ELSE 0 END) AS January,
+    SUM(CASE WHEN MONTH(STR_TO_DATE(o.order_date, '%m-%d-%Y')) = 2 THEN 1 ELSE 0 END) AS February,
+    SUM(CASE WHEN MONTH(STR_TO_DATE(o.order_date, '%m-%d-%Y')) = 3 THEN 1 ELSE 0 END) AS March,
+    SUM(CASE WHEN MONTH(STR_TO_DATE(o.order_date, '%m-%d-%Y')) = 4 THEN 1 ELSE 0 END) AS April,
+    SUM(CASE WHEN MONTH(STR_TO_DATE(o.order_date, '%m-%d-%Y')) = 5 THEN 1 ELSE 0 END) AS May,
+    SUM(CASE WHEN MONTH(STR_TO_DATE(o.order_date, '%m-%d-%Y')) = 6 THEN 1 ELSE 0 END) AS June,
+    SUM(CASE WHEN MONTH(STR_TO_DATE(o.order_date, '%m-%d-%Y')) = 7 THEN 1 ELSE 0 END) AS July,
+    SUM(CASE WHEN MONTH(STR_TO_DATE(o.order_date, '%m-%d-%Y')) = 8 THEN 1 ELSE 0 END) AS August,
+    SUM(CASE WHEN MONTH(STR_TO_DATE(o.order_date, '%m-%d-%Y')) = 9 THEN 1 ELSE 0 END) AS September,
+    SUM(CASE WHEN MONTH(STR_TO_DATE(o.order_date, '%m-%d-%Y')) = 10 THEN 1 ELSE 0 END) AS October,
+    SUM(CASE WHEN MONTH(STR_TO_DATE(o.order_date, '%m-%d-%Y')) = 11 THEN 1 ELSE 0 END) AS November,
+    SUM(CASE WHEN MONTH(STR_TO_DATE(o.order_date, '%m-%d-%Y')) = 12 THEN 1 ELSE 0 END) AS December
+FROM `delivery-person`  dp
+LEFT JOIN orders o ON dp.delivery_person_id = o.delivery_person_id
+WHERE o.order_type != 'return'
+GROUP BY dp.delivery_person_id, dp.name;
+------------------------------------------------------------
+For each gender - male and female - find the absolute and percentage profit (where 
+discount percentage was above 10.10%.) by product name
+
+SELECT
+    c.gender,
+    p.product_name,
+    SUM(o.total_amount_paid) - SUM(p.procurement_cost_per_unit * o.tot_units) AS absolute_profit,
+    (100.0 * SUM(o.total_amount_paid) / SUM(p.procurement_cost_per_unit * o.tot_units)) - 100.0 AS percentage_profit
+FROM
+    orders o
+JOIN
+    product p ON o.product_id = p.product_id
+JOIN
+    customer c ON o.cust_id = c.cust_id
+GROUP BY
+    c.gender, p.product_name
+HAVING
+    percentage_profit > 10.10;
+-----------------------------------------------------------
+Generally the more numbers of units you buy, the more discount seller will give you. For 
+'Dell AX420' is there a relationship between number of units ordered and average 
+discount from selling price? Take only 'buy' order types
+
+SELECT
+    o.tot_units AS number_of_units,
+    AVG(1 - o.total_amount_paid / (o.displayed_selling_price_per_unit * o.tot_units)) AS average_discount
+FROM
+    orders o
+JOIN
+    product p ON o.product_id = p.product_id
+WHERE
+    p.product_name = 'Dell AX420'
+    AND o.order_type = 'buy'
+GROUP BY
+    o.tot_units
+ORDER BY  number_of_units;
